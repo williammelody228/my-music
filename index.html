@@ -331,7 +331,7 @@ async function loadTrack(id,{autoplay=true,startAt=0}={}){
   audio.src=curUrl;
   if(old)URL.revokeObjectURL(old);
   if(startAt>0)audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=startAt;}catch{}},{once:true});
-  if(autoplay)audio.play().catch(e=>{console.warn(e);updatePlayState();});
+  if(autoplay){audio.play().catch(e=>{console.warn(e);updatePlayState();});watchStall();}
   loadBigArt(t);
   render();
   saveSession();
@@ -352,7 +352,35 @@ function advance(dir,auto){
   S.pos=p;loadTrack(curTrackId());
 }
 function prev(){if(audio.currentTime>3){audio.currentTime=0;return;}advance(-1,false);}
-function togglePlay(){if(!S.curId)return;if(audio.paused)audio.play().catch(()=>{});else audio.pause();}
+let pausedAt=0,hiddenWhilePaused=false,stallTm=0;
+/* iOS 버그 대응: 화면이 꺼진 채 이어폰 등으로 멈췄다가 재생하면 소리가 안 나는 경우가 있어
+   오디오를 다시 불러와 같은 위치부터 재생하고, 재생 중인데 시간이 안 흐르면 한 번 더 복구해요 */
+function reloadAndPlay(){
+  const blob=S.curId&&blobCache.get(S.curId);
+  if(!blob){audio.play().catch(()=>{});return;}
+  const t=audio.currentTime||0,old=curUrl;
+  curUrl=URL.createObjectURL(blob);
+  audio.src=curUrl;
+  if(old)URL.revokeObjectURL(old);
+  audio.addEventListener('loadedmetadata',()=>{if(t>0)try{audio.currentTime=t;}catch{}},{once:true});
+  audio.play().catch(()=>{});
+  hiddenWhilePaused=false;
+}
+function watchStall(){
+  clearTimeout(stallTm);
+  const t0=audio.currentTime||0;
+  stallTm=setTimeout(()=>{
+    if(audio.paused||!S.curId)return;
+    if(Math.abs((audio.currentTime||0)-t0)<0.2)reloadAndPlay();
+  },1500);
+}
+function startPlayback(){
+  if(!S.curId)return;
+  if(audio.paused&&audio.getAttribute('src')&&(hiddenWhilePaused||Date.now()-pausedAt>4000))reloadAndPlay();
+  else audio.play().catch(()=>{});
+  watchStall();
+}
+function togglePlay(){if(!S.curId)return;if(audio.paused)startPlayback();else audio.pause();}
 function toggleShuffle(){S.shuffle=!S.shuffle;if(S.queue.length)buildOrder(S.curId);saveSettings();updateModes();toast(S.shuffle?'셔플 켜짐':'셔플 꺼짐');}
 function cycleRepeat(){S.repeat=S.repeat==='off'?'all':S.repeat==='all'?'one':'off';saveSettings();updateModes();toast({off:'반복 꺼짐',all:'전체 반복',one:'한 곡 반복'}[S.repeat]);}
 
@@ -369,7 +397,7 @@ function dropFromQueue(id){
 
 audio.addEventListener('ended',()=>advance(1,true));
 audio.addEventListener('play',()=>{updatePlayState();});
-audio.addEventListener('pause',()=>{updatePlayState();saveSession();});
+audio.addEventListener('pause',()=>{pausedAt=Date.now();if(document.hidden)hiddenWhilePaused=true;updatePlayState();saveSession();});
 audio.addEventListener('playing',()=>{errStreak=0;});
 audio.addEventListener('error',()=>{
   if(!audio.getAttribute('src'))return;
@@ -402,14 +430,14 @@ seek.addEventListener('input',()=>{dragging=true;$('#tCur').textContent=fmt(seek
 seek.addEventListener('change',()=>{const d=audio.duration||0;if(d)audio.currentTime=seek.value/1000*d;dragging=false;});
 
 function saveSession(){try{localStorage.setItem('mm_session',JSON.stringify({ctx:S.ctx,curId:S.curId,time:audio.currentTime||0}));}catch{}}
-document.addEventListener('visibilitychange',()=>{if(document.hidden)saveSession();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){saveSession();if(audio.paused)hiddenWhilePaused=true;}});
 addEventListener('pagehide',saveSession);
 
 /* ----- 잠금화면 / 컨트롤 센터 ----- */
 function setupMediaSession(){
   if(!('mediaSession' in navigator))return;
   const ms=navigator.mediaSession,set=(a,f)=>{try{ms.setActionHandler(a,f);}catch{}};
-  set('play',()=>audio.play().catch(()=>{}));
+  set('play',()=>startPlayback());
   set('pause',()=>audio.pause());
   set('previoustrack',prev);
   set('nexttrack',()=>advance(1,false));
