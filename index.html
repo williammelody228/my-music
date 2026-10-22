@@ -143,7 +143,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <br><button class="pill" id="emptyAdd"></button>
       </div>
       <div class="hint" id="storageInfo"></div>
-      <div class="hint" style="padding-top:0">앱 버전 3</div>
+      <div class="hint" style="padding-top:0" id="verInfo"></div>
     </section>
 
     <section id="view-lists" hidden>
@@ -822,7 +822,27 @@ $('#pAdd').onclick=()=>addToListSheet([S.curId]);
 }
 
 /* ================= 시작 ================= */
+/* ===== 업데이트 알림 =====
+   새 버전을 만들 때: APP_VERSION을 1 올리고 CHANGES를 그 버전의 변경사항만으로 바꾸세요.
+   (이전 버전 내용은 지우면 돼요. 새 버전이 처음 열릴 때 한 번만 표시돼요) */
+const APP_VERSION=4;
+const CHANGES=[
+  '앱을 열지 않은 상태(홈 화면·화면 꺼짐)에서 이어폰으로 멈춘 뒤 재생·다음 곡을 눌러도 소리가 안 나던 문제 수정 (오디오를 새로 연결)',
+  '업데이트 알림 추가: 새 버전이 적용되면 변경사항이 이 창으로 한 번만 표시돼요'
+];
+function checkUpdateNotice(){
+  let seen=NaN;try{seen=parseInt(localStorage.getItem('mm_seen_ver'),10);}catch{}
+  if(seen===APP_VERSION)return;
+  const fresh=!seen&&!S.tracks.length&&!S.lists.length;   // 처음 설치한 사람에게는 표시하지 않음
+  try{localStorage.setItem('mm_seen_ver',String(APP_VERSION));}catch{}
+  if(fresh)return;
+  sheet('업데이트 완료 · 버전 '+APP_VERSION,body=>{
+    body.innerHTML='<ul style="padding-left:18px;margin:6px 0 16px;line-height:1.6">'+CHANGES.map(c=>'<li>'+esc(c)+'</li>').join('')+'</ul><button class="pill wide" id="chOk">확인</button>';
+    body.querySelector('#chOk').onclick=closeSheet;
+  });
+}
 function initIcons(){
+  $('#verInfo').textContent='앱 버전 '+APP_VERSION;
   $('#btnAdd').innerHTML=ico('plus',18)+'곡 추가';
   $('#emptyAdd').innerHTML=ico('plus',18)+'곡 추가';
   $('#newList').innerHTML=ico('plus',18)+'새 재생목록';
@@ -853,6 +873,7 @@ async function boot(){
     S.tracks=tracks;S.byId=new Map(tracks.map(t=>[t.id,t]));S.lists=lists;
   }catch{toast('저장된 데이터를 읽지 못했어요',true);}
   render();
+  checkUpdateNotice();
   const ss=readJSON('mm_session');
   if(ss&&S.byId.has(ss.curId)){
     let ctx=ss.ctx||'all',ids=ctxIds(ctx);
