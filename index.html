@@ -143,6 +143,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
         <br><button class="pill" id="emptyAdd"></button>
       </div>
       <div class="hint" id="storageInfo"></div>
+      <div class="hint" style="padding-top:0">앱 버전 3</div>
     </section>
 
     <section id="view-lists" hidden>
@@ -286,7 +287,7 @@ const getList=id=>S.lists.find(x=>x.id===id);
 const openListObj=()=>getList(S.openList);
 
 /* ================= 재생 엔진 ================= */
-const audio=$('#audio');
+let audio=$('#audio');const AUDIO_EVENTS=[];const onAudio=(ty,fn)=>{AUDIO_EVENTS.push([ty,fn]);audio.addEventListener(ty,fn);};
 let curUrl=null,bigUrl=null,loadTok=0,lastAutoplay=false,errStreak=0;
 
 function buildOrder(startId){
@@ -327,6 +328,7 @@ async function loadTrack(id,{autoplay=true,startAt=0}={}){
   if(tok!==loadTok)return;
   if(!blob){toast('파일을 불러올 수 없어요');return;}
   const old=curUrl;
+  if(autoplay&&audio.getAttribute('src')&&audio.paused&&(hiddenWhilePaused||Date.now()-pausedAt>4000)){freshAudio();hiddenWhilePaused=false;}
   curUrl=URL.createObjectURL(blob);
   audio.src=curUrl;
   if(old)URL.revokeObjectURL(old);
@@ -355,10 +357,21 @@ function prev(){if(audio.currentTime>3){audio.currentTime=0;return;}advance(-1,f
 let pausedAt=0,hiddenWhilePaused=false,stallTm=0;
 /* iOS 버그 대응: 화면이 꺼진 채 이어폰 등으로 멈췄다가 재생하면 소리가 안 나는 경우가 있어
    오디오를 다시 불러와 같은 위치부터 재생하고, 재생 중인데 시간이 안 흐르면 한 번 더 복구해요 */
+function freshAudio(){
+  const old=audio;
+  AUDIO_EVENTS.forEach(([ty,fn])=>old.removeEventListener(ty,fn));
+  try{old.pause();}catch{}
+  old.removeAttribute('src');try{old.load();}catch{}
+  const a=document.createElement('audio');
+  a.id='audio';a.setAttribute('playsinline','');a.preload='auto';
+  old.replaceWith(a);
+  audio=a;
+  AUDIO_EVENTS.forEach(([ty,fn])=>a.addEventListener(ty,fn));
+}
 function reloadAndPlay(){
   const blob=S.curId&&blobCache.get(S.curId);
   if(!blob){audio.play().catch(()=>{});return;}
-  const t=audio.currentTime||0,old=curUrl;
+  const t=audio.currentTime||0,old=curUrl;freshAudio();
   curUrl=URL.createObjectURL(blob);
   audio.src=curUrl;
   if(old)URL.revokeObjectURL(old);
@@ -395,16 +408,16 @@ function dropFromQueue(id){
   if(S.queue.includes(id)){S.queue=S.queue.filter(x=>x!==id);buildOrder(S.curId);}
 }
 
-audio.addEventListener('ended',()=>advance(1,true));
-audio.addEventListener('play',()=>{updatePlayState();});
-audio.addEventListener('pause',()=>{pausedAt=Date.now();if(document.hidden)hiddenWhilePaused=true;updatePlayState();saveSession();});
-audio.addEventListener('playing',()=>{errStreak=0;});
-audio.addEventListener('error',()=>{
+onAudio('ended',()=>{hiddenWhilePaused=false;pausedAt=Date.now();advance(1,true);});
+onAudio('play',()=>{updatePlayState();});
+onAudio('pause',()=>{pausedAt=Date.now();if(document.hidden)hiddenWhilePaused=true;updatePlayState();saveSession();});
+onAudio('playing',()=>{errStreak=0;});
+onAudio('error',()=>{
   if(!audio.getAttribute('src'))return;
   toast('재생할 수 없는 파일이에요');
   if(lastAutoplay&&++errStreak<S.order.length)setTimeout(()=>advance(1,true),700);
 });
-audio.addEventListener('loadedmetadata',()=>{
+onAudio('loadedmetadata',()=>{
   const t=S.byId.get(S.curId),d=audio.duration;
   $('#tDur').textContent=fmt(d);
   if(t&&d&&isFinite(d)&&Math.abs((t.duration||0)-d)>1){
@@ -416,7 +429,7 @@ audio.addEventListener('loadedmetadata',()=>{
 const seek=$('#seek');
 let dragging=false,lastSave=0,lastPS=0;
 const setP=()=>seek.style.setProperty('--p',(seek.value/10)+'%');
-audio.addEventListener('timeupdate',()=>{
+onAudio('timeupdate',()=>{
   const d=audio.duration||0,c=audio.currentTime||0;
   if(!dragging){seek.value=d?Math.round(c/d*1000):0;setP();$('#tCur').textContent=fmt(c);}
   $('#mProg').style.width=d?(c/d*100)+'%':'0';

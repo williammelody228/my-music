@@ -1,6 +1,6 @@
 // 앱 코드(껍데기)만 캐시합니다. 음악 파일은 IndexedDB에 따로 저장돼요.
 // 앱을 수정해서 다시 올릴 때는 아래 버전 숫자를 올리세요 (v1 → v2).
-const CACHE = 'mymusic-v2';
+const CACHE = 'mymusic-v3';
 const SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
